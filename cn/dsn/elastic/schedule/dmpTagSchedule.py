@@ -31,7 +31,7 @@ APPLICATION_JAR = '/home/hdfs/bj/data-analysis-1.0-SNAPSHOT.jar'  # 程序jar存
     获取当前时间 yyyy-MM-dd hh:mm:ss
 '''
 def get_current_time():
-    return time.strftime(TIME_FMT_YMDHMS, time.localtime())
+    return datetime.datetime.now().strftime(TIME_FMT_YMDHMS)
 
 '''
     目标文件夹是否准备好
@@ -129,9 +129,8 @@ def users_tags_merge(context_tags_path, distinct_user_path):
 if __name__ == '__main__':
     need_process_path = PARQUET_FILE_PATH + YESTODAY.replace('-', '')
     is_ready = is_ready_file(need_process_path)
-    message = '%s \t %s is ready %s !' % (get_current_time(), need_process_path, is_ready)
     if is_ready:
-        print message
+        print '%s \t %s is ready %s !' % (get_current_time(), need_process_path, is_ready)
 
         distinct_users(PARQUET_FILE_PATH)
         print '%s \t distinct_users successed ~!' % get_current_time()
@@ -142,4 +141,4 @@ if __name__ == '__main__':
         users_tags_merge(CONTEXT_TAGS_SAVE_PATH, DISTINCT_USER_SAVE_PATH)
         print '%s \t users_tags_merge successed ~! \n\n' % get_current_time()
     else:
-        print '%s \t %s is not  ready ~!' % (get_current_time(), need_process_path)
+        print '%s \t %s is not ready ~!' % (get_current_time(), need_process_path)

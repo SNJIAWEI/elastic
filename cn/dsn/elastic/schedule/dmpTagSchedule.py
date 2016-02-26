@@ -14,6 +14,9 @@ import sys
         2> 统一用户（userGraph data）
         3> 上下文标签（MakeContext: input data 1）
         4> 用户一天的标签聚合（input data 2&3）
+
+        脚本使用方法:
+            程序在第一次执行的时候, distinct_users方法参数 '/adlogs/tmpdir/testnull' 开启, 注释掉HISTORY_USER_SAVE_PATH
 '''
 
 TIME_FMT_YMD = '%Y-%m-%d'
@@ -29,6 +32,7 @@ ARCHIVE_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/archive/'
 CONTEXT_TAGS_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/contexttags/'     # 用户上下文标签 存放路径
 UNDEFINED_GEOHASH_PATH = HDFS_PROTOCOL + '/adlogs/ungeohash/'               # 未识别的经纬度存放路径
 USERS_TAGS_MERGE_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/userstagsmerge/'  # 统一用户&上下文标签  合并存储路径
+USERS_BLACK_LIST_PATH = HDFS_PROTOCOL + '/adlogs/users/blacklist/'              # 用户黑名单
 APPLICATION_JAR = '/home/hdfs/bj/yjw/data-analysis-1.0-SNAPSHOT.jar'            # 程序jar存放路径
 
 '''
@@ -108,21 +112,22 @@ def distinct_users(parquet_file_path):
     cmd_dist_users = 'spark-submit ' \
         '--master yarn-client ' \
         '--conf spark.executor.extraJavaOptions="-XX:-UseGCOverheadLimit -XX:InitiatingHeapOccupancyPercent=35 -XX:ConcGCThreads=20 -XX:+UseG1GC" ' \
-        '--conf spark.kryo.registrator=org.apache.spark.graphx.GraphKryoRegistrator ' \
-        '--conf spark.driver.memory=3g ' \
-        '--conf spark.storage.memoryFraction=0.2 ' \
+        '--conf spark.driver.memory=6g ' \
+        '--conf spark.storage.memoryFraction=0.1 ' \
         '--conf spark.rdd.compress=true ' \
-        '--class com.lomark.users.UserGraph ' \
+        '--class com.lomark.users.UnifiedUser ' \
         '--name %s ' \
         '--executor-memory 1g ' \
         '--executor-cores 1 ' \
-        '--num-executors 120 %s '  % ("userGraph-" + YESTODAY.replace('-', ''), APPLICATION_JAR)
+        '--num-executors 120 %s '  % ("UnifiedUser-" + YESTODAY.replace('-', ''), APPLICATION_JAR)
 
     if len(parquet_file_path) > 0:
         if not not_exist_file(DISTINCT_USER_SAVE_PATH):
             delete_current_hdfs_save_path(DISTINCT_USER_SAVE_PATH)
-        cmd_dist_users += ' %s %d %s %d %s' % (parquet_file_path + '/*/', 2400,
-                                               HISTORY_USER_SAVE_PATH, 1200, DISTINCT_USER_SAVE_PATH)
+        cmd_dist_users += ' %s %d %s %d %s %s' % (parquet_file_path + '/*/*', 2400,
+                                                # '/adlogs/tmpdir/testnull', 2400, # 第一次运行时传空文件
+                                               HISTORY_USER_SAVE_PATH, 2400,
+                                               USERS_BLACK_LIST_PATH + YESTODAY.replace('-', ''), DISTINCT_USER_SAVE_PATH)
         print '%s \t %s ' % (get_current_time(), cmd_dist_users)
         commands.getoutput(cmd_dist_users)
     else:
@@ -156,9 +161,7 @@ def make_context_tag(parquet_file_path):
     if len(parquet_file_path) > 0:
         if not not_exist_file(CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', '')):
             delete_current_hdfs_save_path(CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''))
-        cmd_make_context_tag += '%s %s %s %d ' % (parquet_file_path + '/*/',
-                                                  CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''),
-                                                  UNDEFINED_GEOHASH_PATH + YESTODAY.replace('-', ''), 1600)
+        cmd_make_context_tag += '%s %s %d ' % (parquet_file_path + '/*/', CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''), 1600)
         print '%s \t %s ' % (get_current_time(), cmd_make_context_tag)
         commands.getoutput(cmd_make_context_tag)
     else:
@@ -196,7 +199,6 @@ if __name__ == '__main__':
         print 'Please give me one args ~!'
         exit()
     YESTODAY = sys.argv[1]
-    print YESTODAY
     need_process_path = PARQUET_FILE_PATH + YESTODAY.replace('-', '')
     no_exist = not_exist_file(need_process_path)
     if not no_exist:

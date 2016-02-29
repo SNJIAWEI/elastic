@@ -33,7 +33,8 @@ CONTEXT_TAGS_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/contexttags/'     # �
 UNDEFINED_GEOHASH_PATH = HDFS_PROTOCOL + '/adlogs/ungeohash/'               # 未识别的经纬度存放路径
 USERS_TAGS_MERGE_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/userstagsmerge/'  # 统一用户&上下文标签  合并存储路径
 USERS_BLACK_LIST_PATH = HDFS_PROTOCOL + '/adlogs/users/blacklist/'              # 用户黑名单
-APPLICATION_JAR = '/home/hdfs/bj/yjw/data-analysis-1.0-SNAPSHOT.jar'            # 程序jar存放路径
+APPLICATION_JAR = '/home/hdfs/bj/appjars/yjw/data-analysis-1.0-SNAPSHOT.jar'    # 程序jar存放路径
+APPLICATION_LIB = '/home/hdfs/bj/appjars/yjw/'
 
 '''
     获取当前时间 yyyy-MM-dd hh:mm:ss
@@ -49,7 +50,7 @@ def not_exist_file(hdfs_file_dir):
     out = commands.getoutput(cmd_hdfs_ls_dir)
     return 'No such file or directory' in out
 
-''' 监测目录下文件是否大于1G '''
+''' 监测目录下文件是否大于1G 或者 大于1M '''
 def size_greater_than_1g(hdfs_file_dir):
     cmd_hdfs_du = "hadoop fs -du -s -h " + hdfs_file_dir
     out = commands.getoutput(cmd_hdfs_du)
@@ -193,6 +194,25 @@ def users_tags_merge(context_tags_path, distinct_user_path):
         print '%s \t user_tag_merge method [context_tags_path | distinct_user_path] args loss !' % get_current_time()
         exit()
 
+'''
+    将用户合并后的数据导入到hbase
+    在hbase里,做用户标签的历史合并
+'''
+def tag_2_hbase_his_merge():
+    if not not_exist_file(USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', '')):
+        if size_greater_than_1g(USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', '')):
+            cmd_tags_2_hbase = 'java -Djava.ext.dirs=%s com.lomark.tools.Tags2H %s %s' % (APPLICATION_LIB,
+                                                                                      YESTODAY.replace('-', ''),
+                                                                                      USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', ''))
+            print '%s \t %s ' % (get_current_time(), cmd_tags_2_hbase)
+            commands.getoutput(cmd_tags_2_hbase)
+        else:
+            print '%s \t tag_2_hbase_his_merge data is too small !' % get_current_time()
+            exit()
+    else:
+        print '%s \t tag_2_hbase_his_merge file is not exist !' % get_current_time()
+        exit()
+
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -202,19 +222,22 @@ if __name__ == '__main__':
     need_process_path = PARQUET_FILE_PATH + YESTODAY.replace('-', '')
     no_exist = not_exist_file(need_process_path)
     if not no_exist:
-        print '%s \t %s is ready %s !' % (get_current_time(), need_process_path, not no_exist)
+        print '%s \t %s is ready %s ! \n' % (get_current_time(), need_process_path, not no_exist)
 
         distinct_users(need_process_path)
-        print '%s \t distinct_users successed ~!' % get_current_time()
+        print '%s \t distinct_users successed ~! \n' % get_current_time()
 
         successed = move_hist_archive()
-        print '%s \t move_hist_archive %s ~!' % (get_current_time(), successed)
+        print '%s \t move_hist_archive %s ~! \n' % (get_current_time(), successed)
 
         make_context_tag(need_process_path)
-        print '%s \t make_context_tag successed ~!' % get_current_time()
+        print '%s \t make_context_tag successed ~! \n' % get_current_time()
 
         users_tags_merge(CONTEXT_TAGS_SAVE_PATH, HISTORY_USER_SAVE_PATH)
-        print '%s \t users_tags_merge successed ~! \n\n' % get_current_time()
+        print '%s \t users_tags_merge successed ~! \n' % get_current_time()
+
+        tag_2_hbase_his_merge()
+        print '%s \t tag_2_hbase_his_merge successed ~! \n\n' % get_current_time()
     else:
         print '%s \t %s is not ready ~!' % (get_current_time(), need_process_path)
         exit()

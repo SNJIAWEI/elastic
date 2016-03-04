@@ -237,7 +237,7 @@ def make_final_user_tags():
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print 'Please give me one args ~!'
+        print 'Please give me one args: yyyy-MM-dd'
         exit()
     YESTODAY = sys.argv[1]
     need_process_path = PARQUET_FILE_PATH + YESTODAY.replace('-', '')
@@ -283,7 +283,6 @@ if __name__ == '__main__':
 
         make_final_user_tags()
         print '%s \t make_final_user_tags successed ~! \n' % get_current_time()
-
     else:
         print '%s \t %s is not ready ~!' % (get_current_time(), need_process_path)
         exit()

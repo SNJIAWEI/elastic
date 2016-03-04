@@ -5,6 +5,8 @@ import commands
 import datetime
 import os
 import sys
+import threading
+import time
 
 '''
     __date__:   2016年01月04日
@@ -114,18 +116,18 @@ def distinct_users(parquet_file_path):
         '--master yarn-client ' \
         '--conf spark.executor.extraJavaOptions="-XX:-UseGCOverheadLimit -XX:InitiatingHeapOccupancyPercent=35 -XX:ConcGCThreads=20 -XX:+UseG1GC" ' \
         '--conf spark.driver.memory=6g ' \
-        '--conf spark.storage.memoryFraction=0.1 ' \
+        '--conf spark.storage.memoryFraction=0.2 ' \
         '--conf spark.rdd.compress=true ' \
-        '--class com.lomark.users.UnifiedUser ' \
+        '--class com.lomark.users.UserGraph ' \
         '--name %s ' \
         '--executor-memory 1g ' \
         '--executor-cores 1 ' \
-        '--num-executors 120 %s '  % ("UnifiedUser-" + YESTODAY.replace('-', ''), APPLICATION_JAR)
+        '--num-executors 120 %s '  % ("UserGraph-" + YESTODAY.replace('-', ''), APPLICATION_JAR)
 
     if len(parquet_file_path) > 0:
         if not not_exist_file(DISTINCT_USER_SAVE_PATH):
             delete_current_hdfs_save_path(DISTINCT_USER_SAVE_PATH)
-        cmd_dist_users += ' %s %d %s %d %s %s' % (parquet_file_path + '/*/*', 2400,
+        cmd_dist_users += ' %s %d %s %d %s %s' % (parquet_file_path + '/*/*.parquet', 2400,
                                                 # '/adlogs/tmpdir/testnull', 2400, # 第一次运行时传空文件
                                                HISTORY_USER_SAVE_PATH, 2400,
                                                USERS_BLACK_LIST_PATH + YESTODAY.replace('-', ''), DISTINCT_USER_SAVE_PATH)
@@ -146,23 +148,23 @@ def make_context_tag(parquet_file_path):
                            '--executor-cores 1 ' \
                            '--num-executors 80 ' \
                            '--conf spark.storage.memoryFraction=0.1 ' \
-                           '--jars /home/hdfs/bj/appjars/ch/htrace-core-3.1.0-incubating.jar,' \
-                           '/home/hdfs/bj/appjars/ch/hbase-common-1.1.2.2.3.4.0-3485.jar,' \
-                           '/home/hdfs/bj/appjars/ch/hbase-client-1.1.2.2.3.4.0-3485.jar,' \
-                           '/home/hdfs/bj/appjars/ch/hbase-prefix-tree-1.1.2.2.3.4.0-3485.jar,' \
-                           '/home/hdfs/bj/appjars/ch/hbase-protocol-1.1.2.2.3.4.0-3485.jar,' \
-                           '/home/hdfs/bj/appjars/ch/hbase-server-1.1.2.2.3.4.0-3485.jar,' \
-                           '/home/hdfs/bj/ch/ezmorph-1.0.6.jar,' \
-                           '/home/hdfs/bj/ch/geohash-java-1.0.6.jar,' \
-                           '/home/hdfs/bj/ch/guava-12.0.1.jar,' \
-                           '/home/hdfs/bj/ch/json-lib-2.2.2-jdk15.jar,' \
-                           '/home/hdfs/bj/ch/jts-1.12.jar ' \
+                           '--jars /home/hdfs/bj/hbase-libs/htrace-core-3.1.0-incubating.jar,' \
+                           '/home/hdfs/bj/hbase-libs/hbase-common-1.1.2.2.3.4.0-3485.jar,' \
+                           '/home/hdfs/bj/hbase-libs/hbase-client-1.1.2.2.3.4.0-3485.jar,' \
+                           '/home/hdfs/bj/hbase-libs/hbase-prefix-tree-1.1.2.2.3.4.0-3485.jar,' \
+                           '/home/hdfs/bj/hbase-libs/hbase-protocol-1.1.2.2.3.4.0-3485.jar,' \
+                           '/home/hdfs/bj/hbase-libs/hbase-server-1.1.2.2.3.4.0-3485.jar,' \
+                           '/home/hdfs/bj/hbase-libs/ezmorph-1.0.6.jar,' \
+                           '/home/hdfs/bj/hbase-libs/geohash-java-1.0.6.jar,' \
+                           '/home/hdfs/bj/hbase-libs/guava-12.0.1.jar,' \
+                           '/home/hdfs/bj/hbase-libs/json-lib-2.2.2-jdk15.jar,' \
+                           '/home/hdfs/bj/hbase-libs/jts-1.12.jar ' \
                            '--class com.lomark.tags.MakeContextTags %s ' % ("MakeContextTags-" + YESTODAY.replace('-', ''), APPLICATION_JAR)
 
     if len(parquet_file_path) > 0:
         if not not_exist_file(CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', '')):
             delete_current_hdfs_save_path(CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''))
-        cmd_make_context_tag += '%s %s %d ' % (parquet_file_path + '/*/', CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''), 1600)
+        cmd_make_context_tag += '%s %s %d ' % (parquet_file_path + '/*/*.parquet', CONTEXT_TAGS_SAVE_PATH + YESTODAY.replace('-', ''), 1600)
         print '%s \t %s ' % (get_current_time(), cmd_make_context_tag)
         commands.getoutput(cmd_make_context_tag)
     else:
@@ -198,12 +200,12 @@ def users_tags_merge(context_tags_path, distinct_user_path):
     将用户合并后的数据导入到hbase
     在hbase里,做用户标签的历史合并
 '''
-def tag_2_hbase_his_merge():
+def tag_2_hbase_his_merge(pf):
     if not not_exist_file(USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', '')):
         if size_greater_than_1g(USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', '')):
-            cmd_tags_2_hbase = 'java -Djava.ext.dirs=%s com.lomark.tools.Tags2H %s %s' % (APPLICATION_LIB,
-                                                                                      YESTODAY.replace('-', ''),
-                                                                                      USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', ''))
+            cmd_tags_2_hbase = 'java -Djava.ext.dirs=%s com.lomark.tools.Tags2H %s %s %s' % (APPLICATION_LIB,
+                                                                                  YESTODAY.replace('-', ''),
+                                                                                  USERS_TAGS_MERGE_SAVE_PATH + YESTODAY.replace('-', ''), pf)
             print '%s \t %s ' % (get_current_time(), cmd_tags_2_hbase)
             commands.getoutput(cmd_tags_2_hbase)
         else:
@@ -213,6 +215,25 @@ def tag_2_hbase_his_merge():
         print '%s \t tag_2_hbase_his_merge file is not exist !' % get_current_time()
         exit()
 
+# 对hbase中的数据做衰减操作
+def make_final_user_tags():
+    cmd_final_userTag = 'spark-submit ' \
+                        '--master yarn-client ' \
+                        '--name %s ' \
+                        '--driver-memory 2g ' \
+                        '--executor-memory 2g ' \
+                        '--executor-cores 1 ' \
+                        '--num-executors 70 ' \
+                        '--conf spark.storage.memoryFraction=0.3 ' \
+                        '--jars /home/hdfs/bj/hbase-libs/hbase-common-1.1.2.2.3.4.0-3485.jar,' \
+                        '/home/hdfs/bj/hbase-libs/hbase-client-1.1.2.2.3.4.0-3485.jar,' \
+                        '/home/hdfs/bj/hbase-libs/hbase-protocol-1.1.2.2.3.4.0-3485.jar,' \
+                        '/home/hdfs/bj/hbase-libs/guava-12.0.1.jar ' \
+                        '--class com.lomark.tags.MakeUserTags %s %s' % ('FinalUserTags-' + YESTODAY.replace('-', ''),
+                                                                        APPLICATION_JAR,
+                                                                        YESTODAY.replace('-', ''))
+    print '%s \t %s ' % (get_current_time(), cmd_final_userTag)
+    commands.getoutput(cmd_final_userTag)
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
@@ -236,8 +257,33 @@ if __name__ == '__main__':
         users_tags_merge(CONTEXT_TAGS_SAVE_PATH, HISTORY_USER_SAVE_PATH)
         print '%s \t users_tags_merge successed ~! \n' % get_current_time()
 
-        tag_2_hbase_his_merge()
-        print '%s \t tag_2_hbase_his_merge successed ~! \n\n' % get_current_time()
+        # 多线程, 开启7个线程将数据导入到Hbase中
+        threads = []
+        part_files = ['part-000', 'part-001', 'part-002', 'part-003', 'part-004', 'part-005', 'part-006']
+        for pf in part_files:
+            threads.append(threading.Thread(target=tag_2_hbase_his_merge, name=pf, args=(pf,)))
+
+        for thread in threads:
+            thread.setDaemon(True)
+            thread.start()
+        print '%s \t 7 threads are starting ! \n' % get_current_time()
+
+        # 主线程等待所有子线程结束
+        for childThread in threads:
+            threading.Thread.join(childThread)
+        print '%s \t tag_2_hbase_his_merge successed ~! \n' % get_current_time()
+
+        # 监测活动线程数量, 当所有子线程结束了, 在控制台数据内容(主线程占1)
+        # while True:
+        #     if (threading.activeCount() - 1) == 0:
+        #         print '%s \t tag_2_hbase_his_merge successed ~! \n' % get_current_time()
+        #         break
+        #     else:
+        #         time.sleep(30)
+
+        make_final_user_tags()
+        print '%s \t make_final_user_tags successed ~! \n' % get_current_time()
+
     else:
         print '%s \t %s is not ready ~!' % (get_current_time(), need_process_path)
         exit()

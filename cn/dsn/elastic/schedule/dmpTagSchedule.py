@@ -6,31 +6,24 @@ import datetime
 import os
 import sys
 import threading
-import time
 
 '''
     __date__:   2016年01月04日
     __author__: jiawei
     __desc__:   标签自动化运行流程：
-        1> 读取flume写入到hdfs /adlogs/parquetlog/20160201/xx 数据
-        2> 统一用户（userGraph data）
-        3> 上下文标签（MakeContext: input data 1）
-        4> 用户一天的标签聚合（input data 2&3）
-
-        脚本使用方法:
-            程序在第一次执行的时候, distinct_users方法参数 '/adlogs/tmpdir/testnull' 开启, 注释掉HISTORY_USER_SAVE_PATH
+    脚本使用方法:
+        程序在第一次执行的时候, distinct_users方法参数 '/adlogs/tmpdir/testnull' 开启, 注释掉HISTORY_USER_SAVE_PATH.
 '''
 
 TIME_FMT_YMD = '%Y-%m-%d'
 TIME_FMT_YMDHMS = '%Y-%m-%d %H:%M:%S'
-# YESTODAY = (datetime.date.today() - datetime.timedelta(days=1)).strftime(TIME_FMT_YMD)
 YESTODAY = ''
 
 HDFS_PROTOCOL = 'hdfs://dsdc04:8020'
 PARQUET_FILE_PATH = HDFS_PROTOCOL + '/adlogs/parquetlog/'           # bz2转换成parquet文件存放路径
 DISTINCT_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/current/'          # 统一用户识别 数据存放路径
-HISTORY_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/history/'
-ARCHIVE_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/archive/'
+HISTORY_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/history/'           # 存储着某天的用户数据
+ARCHIVE_USER_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/users/archive/'           # 用户数据归档目录
 CONTEXT_TAGS_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/contexttags/'     # 用户上下文标签 存放路径
 UNDEFINED_GEOHASH_PATH = HDFS_PROTOCOL + '/adlogs/ungeohash/'               # 未识别的经纬度存放路径
 USERS_TAGS_MERGE_SAVE_PATH = HDFS_PROTOCOL + '/adlogs/tagsout/userstagsmerge/'  # 统一用户&上下文标签  合并存储路径
@@ -249,6 +242,10 @@ if __name__ == '__main__':
         print '%s \t distinct_users successed ~! \n' % get_current_time()
 
         successed = move_hist_archive()
+        # 如果生成的用户数据存在问题, 程序退出, 不执行后续流程 ~![只用于测试]
+        if not successed:
+            print '%s \t move_hist_archive %s , Application exit ~! \n' % (get_current_time(), successed)
+            exit()
         print '%s \t move_hist_archive %s ~! \n' % (get_current_time(), successed)
 
         make_context_tag(need_process_path)
@@ -272,14 +269,6 @@ if __name__ == '__main__':
         for childThread in threads:
             threading.Thread.join(childThread)
         print '%s \t tag_2_hbase_his_merge successed ~! \n' % get_current_time()
-
-        # 监测活动线程数量, 当所有子线程结束了, 在控制台数据内容(主线程占1)
-        # while True:
-        #     if (threading.activeCount() - 1) == 0:
-        #         print '%s \t tag_2_hbase_his_merge successed ~! \n' % get_current_time()
-        #         break
-        #     else:
-        #         time.sleep(30)
 
         make_final_user_tags()
         print '%s \t make_final_user_tags successed ~! \n' % get_current_time()
